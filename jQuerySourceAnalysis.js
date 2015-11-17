@@ -4566,6 +4566,12 @@ jQuery.event = {
 				handlers = events[ type ] = [];
 				handlers.delegateCount = 0;
 
+				//引入jQuery的Special Event机制	
+				//什么时候要用到自定义函数？有些浏览器并不兼容某类型的事件，如IE6～8不支持hashchange事件，你无法通过jQuery(window).bind('hashchange', callback)来绑定这个事件，这个时候你就可以通过jQuery自定义事件接口来模拟这个事件，做到跨浏览器兼容。
+				//原理:
+				//jQuery(elem).bind(type, callbakc)实际上是映射到 jQuery.event.add(elem, types, handler, data)这个方法，每一个类型的事件会初始化一次事件处理器，而传入的回调函数会以数组的方式缓存起来，当事件触发的时候处理器将依次执行这个数组。
+				//jQuery.event.add方法在第一次初始化处理器的时候会检查是否为自定义事件，如果存在则将会把控制权限交给自定义事件的事件初始化函数，同样事件卸载的jQuery.event.remove方法在删除处理器前也会检查此。
+				
 				// Only use addEventListener if the special events handler returns false
 				// 如果特殊事件处理程序函数返回false，使用addEventListener/attachEvent添加事件
 				//jQuery.event.add方法在第一次初始化处理器的时候会检查是否为自定义事件，
@@ -4936,6 +4942,7 @@ jQuery.event = {
 	},
 
 	mouseHooks: {
+		//有一些属性是共用的，都存在，所以单独拿出来就好了
 		props: "button buttons clientX clientY offsetX offsetY pageX pageY screenX screenY toElement".split(" "),
 		filter: function( event, original ) {
 			var eventDoc, doc, body,
@@ -4961,6 +4968,9 @@ jQuery.event = {
 		}
 	},
 
+	//总的来说jQuery.event.fix干的事情：
+	//将原生的事件对象 event 修正为一个新的可写event 对象，并对该 event 的属性以及方法统一接口
+	//该方法在内部调用了 jQuery.Event(event) 构造函数
 	fix: function( event ) {
 		if ( event[ jQuery.expando ] ) {
 			return event;
@@ -4972,17 +4982,21 @@ jQuery.event = {
 			originalEvent = event,
 			fixHook = this.fixHooks[ type ];
 
-		if ( !fixHook ) {
+			if ( !fixHook ) {
+			// 扩展事件属性
 			this.fixHooks[ type ] = fixHook =
 				rmouseEvent.test( type ) ? this.mouseHooks :
 				rkeyEvent.test( type ) ? this.keyHooks :
 				{};
 		}
+		//然后把私有的与公共的拼接一下
 		copy = fixHook.props ? this.props.concat( fixHook.props ) : this.props;
 
+		//然后混入到这个新的对象上
 		event = new jQuery.Event( originalEvent );
 
 		i = copy.length;
+		//jQuery自己写了一个基于native event的Event对象，并且把copy数组中对应的属性从native event中复制到自己的Event对象中
 		while ( i-- ) {
 			prop = copy[ i ];
 			event[ prop ] = originalEvent[ prop ];
@@ -4990,6 +5004,7 @@ jQuery.event = {
 
 		// Support: Cordova 2.5 (WebKit) (#13255)
 		// All events should have a target; Cordova deviceready doesn't
+		//jQuery纠正了event.target对象,jQuery官方给的解释是，Cordova没有target对象
 		if ( !event.target ) {
 			event.target = document;
 		}
@@ -5000,6 +5015,11 @@ jQuery.event = {
 			event.target = event.target.parentNode;
 		}
 
+		//在最后jQuery还不忘放一个钩子，调用fixHook.fitler方法用以纠正一些特定的event属性
+		//例如mouse event中的pageX，pageY，keyboard event中的which
+		//进一步修正事件对象属性的兼容问题
+		//fixHook就是在上一章，预处理的时候用到的，分解type存进去的，针对这个特性的单独处理
+		//最后返回这个“全新的”Event对象
 		return fixHook.filter ? fixHook.filter( event, originalEvent ) : event;
 	},
 
@@ -5130,7 +5150,9 @@ jQuery.Event.prototype = {
 
 	preventDefault: function() {
 		var e = this.originalEvent;
-
+		
+		//重写了preventDefault方法，但是现实上其实还是调用浏览器提供的e.preventDefault方法的，唯一的处理就是增加了一个
+		//状态机用来记录，当前是否调用过这个方法
 		this.isDefaultPrevented = returnTrue;
 
 		if ( e && e.preventDefault ) {
